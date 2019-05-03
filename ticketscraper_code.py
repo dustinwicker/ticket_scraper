@@ -1,15 +1,13 @@
-import matplotlib
-matplotlib.use('QT4Agg')
-import matplotlib.pyplot as plt
+# import matplotlib
+# matplotlib.use('QT4Agg')
+# import matplotlib.pyplot as plt
 
+from __future__ import print_function
 import os
 import pandas as pd
 import re
 from collections import OrderedDict
 from itertools import repeat
-from __future__ import print_function
-import pickle
-import os.path
 from selenium import webdriver
 from selenium.webdriver.support.ui import WebDriverWait as wait
 from selenium.webdriver.support import expected_conditions as EC
@@ -18,27 +16,14 @@ from selenium.common.exceptions import NoSuchElementException, TimeoutException
 from selenium.webdriver.chrome.options import Options
 from datetime import datetime as dt
 
-from googleapiclient.discovery import build
-from google_auth_oauthlib.flow import InstalledAppFlow
-from google.auth.transport.requests import Request
-import numpy as np
-
-import time
-from itertools import chain, combinations
-
-# import dateutil.parser as dparser
-# import math
-# import chromedriver
-# import keyring
-
 # Get webdriver to work in the background (without popping up)
 options = Options()
 options.add_argument('--headless')
 options.add_argument('--disable-gpu')
+options.add_argument("javascript.enabled")
 
 print('libraries and modules loaded in.')
 
-### Save times to run to csv (budget_stats.csv)
 ### Set all actions at same time
 # Increase maximum width in characters of columns - will put all columns in same line in console readout
 pd.set_option('expand_frame_repr', False)
@@ -48,7 +33,7 @@ pd.set_option('display.max_colwidth', -1)
 pd.options.display.max_rows = 200
 
 # Change to appropriate directory
-os.chdir('/Users/dustinwicker/Documents/ticketscraper')
+os.chdir('/Users/dustinwicker/PyCharmProjects/ticketscraper')
 print('appropriate directory has been changed to.')
 
 print("Begin process...")
@@ -65,6 +50,11 @@ value = "lord huron tickets"
 search.send_keys(value)
 # Submit search result
 search.submit()
+
+# Get URL of search
+search_url = driver.current_url
+# Return back to original search results
+# driver.get(url=search_url)
 
 ### Obtain all links ###
 
@@ -129,18 +119,15 @@ for sitename in sitename_link_urls:
 
 #driver.find_elements_by_partial_link_text('lord')[0].text
 
-# For loop to scrape sites
-#for sitename in sitename_link_urls:
-### VividSeats
-
-# if sitename_link_urls[0] == "vividseats":
-#     print('ok')
-#     # Click link
+###################
+### Vivid Seats ###
+###################
 driver.find_element_by_partial_link_text('vividseats').click()
 
 if driver.current_url.find('vividseats.com/') > 1:
     #print("Currently openings: " + ad_urls[0])
     # Use to create column below
+    retailer_url = driver.current_url
     retailer = driver.current_url
     retailer = re.search('https://www\.(.*)\.com/c', retailer)
     retailer = retailer.group(1)
@@ -233,12 +220,15 @@ for index, value in enumerate(vividseats_prices):
 vividseats_individual_options_info_df = pd.DataFrame(data=vividseats_individual_options_info, columns=['row', 'ticket_info', 'price'])
 
 # Make length same as vividseats_individual_options_info_df
-vividseats_individual_options_info_df_len = len(vividseats_individual_options_info_df)-1
-event_information_df_expanded = event_information_df.append([event_information_df]*vividseats_individual_options_info_df_len,
+if len(vividseats_individual_options_info_df) > 1:
+    vividseats_individual_options_info_df_len = len(vividseats_individual_options_info_df)-1
+    event_information_df_expanded = event_information_df.append([event_information_df]*vividseats_individual_options_info_df_len,
                                                             ignore_index=True)
-
-# Merge DataFrames on index
-vividseats_ticket_info = pd.merge(event_information_df_expanded, vividseats_individual_options_info_df, left_index=True, right_index=True)
+    # Merge DataFrames on index
+    vividseats_ticket_info = pd.merge(event_information_df_expanded, vividseats_individual_options_info_df, left_index=True, right_index=True)
+else:
+    # Merge DataFrames on index
+    vividseats_ticket_info = pd.merge(event_information_df_expanded, vividseats_individual_options_info_df, left_index=True, right_index=True)
 
 # Remove $ from price and convert to int
 vividseats_ticket_info['price'] = vividseats_ticket_info['price'].astype(str).str.replace('$','').astype(int)
@@ -248,25 +238,835 @@ vividseats_ticket_info.loc[:,'retailer'] = retailer
 # time of search
 vividseats_ticket_info.loc[:,'time_of_search'] = time_of_search
 
+### Return back to main vivid seats site that lists all concert dates
+# Close window of specific concert/event which has been scraped
+driver.close()
+driver.switch_to.window(driver.window_handles[0])
+
+# Get second concert
+event_information = driver.find_elements_by_xpath('//table[@id="productionsTable"]//tr[@class="vdp-event-row even"]')[0].text.split('\n')
+
+# Get current time
+time_of_search = dt.now().strftime("%Y-%m-%d %H:%M")
+
+# Empty list to append results to
+event_information_list = []
+for index, value in enumerate(event_information):
+    # Check in day in information
+    if value in ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]:
+        day_index = index
+        if day_index == 0:
+            day_of_week = [event_information[0]]
+            month_day = [event_information[1]]
+            clock_time = [event_information[2]]
+            artist = [event_information[3]]
+            event = [[event_information[4]][0].split('–')[0].strip()]
+            city_state = [[event_information[4]][0].split('–')[1].strip()]
+# Create DataFrame
+event_information_df = pd.DataFrame(data=[day_of_week, month_day, clock_time, artist, event, city_state]).transpose().\
+     rename(columns={0:'day', 1:'date', 2:'time', 3:'artist', 4:'event', 5:'location'})
+
+my_href = driver.find_elements_by_xpath('//table[@id="productionsTable"]//tr[@class="vdp-event-row even"]')[0].get_attribute(name='data-href')
+
+driver.execute_script("window.open('" + my_href +"');")
+
+# Obtain position of current window handle in window handles list
+current_window_handle_index = driver.window_handles.index(driver.current_window_handle)
+# Obtain position of newly opened tab
+new_window_handle_index = current_window_handle_index + 1
+driver.switch_to.window(driver.window_handles[new_window_handle_index])
+
+try:
+    wait(driver, 10).until(EC.presence_of_element_located((By.XPATH, '//div[@class="production-wrapper"]//'
+                                                                     'aside[@class="vdp-modal "][@id="ticketQuantityModal"][@data-state="opened"]')))
+    print("Pop-up has been loaded.")
+except NoSuchElementException:
+    print("No pop-up appeared")
+
+
+if driver.find_elements_by_xpath('//div[@class="vdp-modal__container"]//div[@class="vdp-modal__header"]//'
+                                 'h5[@class="vdp-type-headline5"]')[0].text == "HOW MANY TICKETS?":
+    print("Asking for how many tickets I would like.")
+    # Click skip - do not select number of seats wanted
+    driver.find_element_by_css_selector("button[class='vdp-button--text modal-dismiss']").click()
+    print("Asking for how many tickets pop-up has been clicked off.")
+    #print(driver.find_elements_by_xpath('//div[@id="rowContainer"]//ul[@class="ticket-rows"]')[0].text)
+    try:
+        wait(driver, 10).until(EC.presence_of_element_located((By.XPATH, '//div[@class="production-wrapper"]//'
+                                                                         'aside[@class="vdp-modal "][@id="ticketQuantityModal"][@data-state="closed"]')))
+        print("Pop-up has been cleared.")
+    except TimeoutException:
+        print('Time-out error')
+else:
+    print("No pop-up appeared")
+    #print(driver.find_elements_by_xpath('//div[@id="rowContainer"]//ul[@class="ticket-rows"]')[0].text)
+
+# Str of all prices for particular artist/event
+vividseats_prices = driver.find_elements_by_xpath('//div[@id="rowContainer"]')[0].text
+vividseats_prices = vividseats_prices.split('\nRow')
+
+vividseats_individual_options_info = []
+amount_position_index = []
+for index, value in enumerate(vividseats_prices):
+    if len(vividseats_prices[index].split('\n')) > 1:
+        max_index = index
+        vividseats_prices_split = vividseats_prices[index].split('\n')
+        print(vividseats_prices_split)
+        for index, value in enumerate(vividseats_prices_split):
+            if '$' in value:
+                amount_position_index.extend([index])
+                if len(amount_position_index) == max_index:
+                    amount_position = index
+                    if amount_position == 3:
+                        vividseats_individual_options_info.append([vividseats_prices_split[0], vividseats_prices_split[1],
+                                     vividseats_prices_split[3]])
+                    if amount_position == 1:
+                        vividseats_individual_options_info.append([vividseats_prices_split[0], vividseats_prices_split[1].split(' $')[0],
+                                     vividseats_prices_split[1].split(' $')[1]])
+# Create DataFrame
+vividseats_individual_options_info_df = pd.DataFrame(data=vividseats_individual_options_info, columns=['row', 'ticket_info', 'price'])
+
+# Make length same as vividseats_individual_options_info_df
+if len(vividseats_individual_options_info_df) > 1:
+    vividseats_individual_options_info_df_len = len(vividseats_individual_options_info_df)-1
+    event_information_df_expanded = event_information_df.append([event_information_df]*vividseats_individual_options_info_df_len,
+                                                            ignore_index=True)
+    # Merge DataFrames on index
+    vividseats_ticket_info = pd.merge(event_information_df_expanded, vividseats_individual_options_info_df, left_index=True, right_index=True)
+else:
+    # Merge DataFrames on index
+    individual_ticket_info = pd.merge(event_information_df, vividseats_individual_options_info_df, left_index=True, right_index=True)
+
+    # Remove $ from price and convert to int
+    individual_ticket_info['price'] = individual_ticket_info['price'].astype(str).str.replace('$','').astype(int)
+    # Add columns - retailer info
+    individual_ticket_info.loc[:,'retailer'] = retailer
+    # time of search
+    individual_ticket_info.loc[:,'time_of_search'] = time_of_search
+
+    if vividseats_ticket_info is not None:
+        print("vividseats_ticket_info exists. Append individual_ticket_info.")
+        vividseats_ticket_info = vividseats_ticket_info.append(individual_ticket_info).reset_index(drop=True)
+
+### Return back to main vivid seats site that lists all concert dates
+# Close window of specific concert/event which has been scraped
+driver.close()
+driver.switch_to.window(driver.window_handles[0])
+
+
+# Get third concert
+event_information = driver.find_elements_by_xpath('//table[@id="productionsTable"]//tr[@class="vdp-event-row odd"]')[1].text.split('\n')
+
+# Get current time
+time_of_search = dt.now().strftime("%Y-%m-%d %H:%M")
+
+# Empty list to append results to
+event_information_list = []
+for index, value in enumerate(event_information):
+    # Check in day in information
+    if value in ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]:
+        day_index = index
+        if day_index == 0:
+            day_of_week = [event_information[0]]
+            month_day = [event_information[1]]
+            clock_time = [event_information[2]]
+            artist = [event_information[3]]
+            event = [[event_information[4]][0].split('–')[0].strip()]
+            city_state = [[event_information[4]][0].split('–')[1].strip()]
+# Create DataFrame
+event_information_df = pd.DataFrame(data=[day_of_week, month_day, clock_time, artist, event, city_state]).transpose().\
+     rename(columns={0:'day', 1:'date', 2:'time', 3:'artist', 4:'event', 5:'location'})
+
+my_href = driver.find_elements_by_xpath('//table[@id="productionsTable"]//tr[@class="vdp-event-row odd"]')[1].get_attribute(name='data-href')
+
+driver.execute_script("window.open('" + my_href +"');")
+
+# Obtain position of current window handle in window handles list
+current_window_handle_index = driver.window_handles.index(driver.current_window_handle)
+# Obtain position of newly opened tab
+new_window_handle_index = current_window_handle_index + 1
+driver.switch_to.window(driver.window_handles[new_window_handle_index])
+
+try:
+    wait(driver, 10).until(EC.presence_of_element_located((By.XPATH, '//div[@class="production-wrapper"]//'
+                                                                     'aside[@class="vdp-modal "][@id="ticketQuantityModal"][@data-state="opened"]')))
+    print("Pop-up has been loaded.")
+except NoSuchElementException:
+    print("No pop-up appeared")
+
+
+if driver.find_elements_by_xpath('//div[@class="vdp-modal__container"]//div[@class="vdp-modal__header"]//'
+                                 'h5[@class="vdp-type-headline5"]')[0].text == "HOW MANY TICKETS?":
+    print("Asking for how many tickets I would like.")
+    # Click skip - do not select number of seats wanted
+    driver.find_element_by_css_selector("button[class='vdp-button--text modal-dismiss']").click()
+    print("Asking for how many tickets pop-up has been clicked off.")
+    #print(driver.find_elements_by_xpath('//div[@id="rowContainer"]//ul[@class="ticket-rows"]')[0].text)
+    try:
+        wait(driver, 10).until(EC.presence_of_element_located((By.XPATH, '//div[@class="production-wrapper"]//'
+                                                                         'aside[@class="vdp-modal "][@id="ticketQuantityModal"][@data-state="closed"]')))
+        print("Pop-up has been cleared.")
+    except TimeoutException:
+        print('Time-out error')
+else:
+    print("No pop-up appeared")
+    #print(driver.find_elements_by_xpath('//div[@id="rowContainer"]//ul[@class="ticket-rows"]')[0].text)
+
+# Str of all prices for particular artist/event
+vividseats_prices = driver.find_elements_by_xpath('//div[@id="rowContainer"]')[0].text
+vividseats_prices = vividseats_prices.split('\nRow')
+
+if "No results" in vividseats_prices[0]:
+    print("No tickets available for particular event.")
+    vividseats_individual_options_info_df = pd.DataFrame(data=[["NA"] * 3], columns=['row', 'ticket_info', 'price'])
+    #individual_ticket_info = event_information_df['artist'].values[0].lower().replace(" ", "_") + "_" + event_information_df['location'].values[0].lower().replace(", ", "_") + "_ticket_info"
+
+    individual_ticket_info = pd.merge(event_information_df, vividseats_individual_options_info_df, left_index=True, right_index=True)
+
+    # Add columns - retailer info
+    individual_ticket_info.loc[:, 'retailer'] = retailer
+    # time of search
+    individual_ticket_info.loc[:, 'time_of_search'] = time_of_search
+else:
+    vividseats_individual_options_info = []
+    amount_position_index = []
+    for index, value in enumerate(vividseats_prices):
+        if len(vividseats_prices[index].split('\n')) > 1:
+            max_index = index
+            vividseats_prices_split = vividseats_prices[index].split('\n')
+            print(vividseats_prices_split)
+            for index, value in enumerate(vividseats_prices_split):
+                if '$' in value:
+                    amount_position_index.extend([index])
+                    if len(amount_position_index) == max_index:
+                        amount_position = index
+                        if amount_position == 3:
+                            vividseats_individual_options_info.append([vividseats_prices_split[0], vividseats_prices_split[1],
+                                         vividseats_prices_split[3]])
+                        if amount_position == 1:
+                            vividseats_individual_options_info.append([vividseats_prices_split[0], vividseats_prices_split[1].split(' $')[0],
+                                         vividseats_prices_split[1].split(' $')[1]])
+    # Create DataFrame
+    vividseats_individual_options_info_df = pd.DataFrame(data=vividseats_individual_options_info, columns=['row', 'ticket_info', 'price'])
+
+    # Make length same as vividseats_individual_options_info_df
+    if len(vividseats_individual_options_info_df) > 1:
+        vividseats_individual_options_info_df_len = len(vividseats_individual_options_info_df)-1
+        event_information_df_expanded = event_information_df.append([event_information_df]*vividseats_individual_options_info_df_len,
+                                                                ignore_index=True)
+        # Merge DataFrames on index
+        vividseats_ticket_info = pd.merge(event_information_df_expanded, vividseats_individual_options_info_df, left_index=True, right_index=True)
+    else:
+        print("One ticket option is available.")
+        # Merge DataFrames on index
+        individual_ticket_info = pd.merge(event_information_df, vividseats_individual_options_info_df, left_index=True, right_index=True)
+
+        # Remove $ from price and convert to int
+        individual_ticket_info['price'] = individual_ticket_info['price'].astype(str).str.replace('$','').astype(int)
+        # Add columns - retailer info
+        individual_ticket_info.loc[:,'retailer'] = retailer
+        # time of search
+        individual_ticket_info.loc[:,'time_of_search'] = time_of_search
+
+        if vividseats_ticket_info is not None:
+            print("vividseats_ticket_info exists. Append individual_ticket_info.")
+            vividseats_ticket_info = vividseats_ticket_info.append(individual_ticket_info).reset_index(drop=True)
+            print("New length of vividseats_ticket_info after appending is: " + str(len(vividseats_ticket_info))+ "." + "\n")
+            print("The contents of vividseats_ticket_info are below:")
+            print(vividseats_ticket_info)
+
+# # Remove $ from price and convert to int
+# vividseats_ticket_info['price'] = vividseats_ticket_info['price'].astype(str).str.replace('$','').astype(int)
+#
+# # Add columns - retailer info
+# vividseats_ticket_info.loc[:,'retailer'] = retailer
+# # time of search
+# vividseats_ticket_info.loc[:,'time_of_search'] = time_of_search
+
+### Return back to main vivid seats site that lists all concert dates
+# Close window of specific concert/event which has been scraped
+driver.close()
+driver.switch_to.window(driver.window_handles[0])
+
+
+# Get fourth concert
+event_information = driver.find_elements_by_xpath('//table[@id="productionsTable"]//tr[@class="vdp-event-row even"]')[1].text.split('\n')
+
+# Get current time
+time_of_search = dt.now().strftime("%Y-%m-%d %H:%M")
+
+# Empty list to append results to
+event_information_list = []
+for index, value in enumerate(event_information):
+    # Check in day in information
+    if value in ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]:
+        day_index = index
+        if day_index == 0:
+            day_of_week = [event_information[0]]
+            month_day = [event_information[1]]
+            clock_time = [event_information[2]]
+            artist = [event_information[3]]
+            event = [[event_information[4]][0].split('–')[0].strip()]
+            city_state = [[event_information[4]][0].split('–')[1].strip()]
+# Create DataFrame
+event_information_df = pd.DataFrame(data=[day_of_week, month_day, clock_time, artist, event, city_state]).transpose().\
+     rename(columns={0:'day', 1:'date', 2:'time', 3:'artist', 4:'event', 5:'location'})
+
+my_href = driver.find_elements_by_xpath('//table[@id="productionsTable"]//tr[@class="vdp-event-row even"]')[1].get_attribute(name='data-href')
+
+driver.execute_script("window.open('" + my_href +"');")
+
+# Obtain position of current window handle in window handles list
+current_window_handle_index = driver.window_handles.index(driver.current_window_handle)
+# Obtain position of newly opened tab
+new_window_handle_index = current_window_handle_index + 1
+driver.switch_to.window(driver.window_handles[new_window_handle_index])
+
+try:
+    wait(driver, 10).until(EC.presence_of_element_located((By.XPATH, '//div[@class="production-wrapper"]//'
+                                                                     'aside[@class="vdp-modal "][@id="ticketQuantityModal"][@data-state="opened"]')))
+    print("Pop-up has been loaded.")
+except NoSuchElementException:
+    print("No pop-up appeared")
+
+
+if driver.find_elements_by_xpath('//div[@class="vdp-modal__container"]//div[@class="vdp-modal__header"]//'
+                                 'h5[@class="vdp-type-headline5"]')[0].text == "HOW MANY TICKETS?":
+    print("Asking for how many tickets I would like.")
+    # Click skip - do not select number of seats wanted
+    driver.find_element_by_css_selector("button[class='vdp-button--text modal-dismiss']").click()
+    print("Asking for how many tickets pop-up has been clicked off.")
+    #print(driver.find_elements_by_xpath('//div[@id="rowContainer"]//ul[@class="ticket-rows"]')[0].text)
+    try:
+        wait(driver, 10).until(EC.presence_of_element_located((By.XPATH, '//div[@class="production-wrapper"]//'
+                                                                         'aside[@class="vdp-modal "][@id="ticketQuantityModal"][@data-state="closed"]')))
+        print("Pop-up has been cleared.")
+    except TimeoutException:
+        print('Time-out error')
+else:
+    print("No pop-up appeared")
+    #print(driver.find_elements_by_xpath('//div[@id="rowContainer"]//ul[@class="ticket-rows"]')[0].text)
+
+# Str of all prices for particular artist/event
+vividseats_prices = driver.find_elements_by_xpath('//div[@id="rowContainer"]')[0].text
+vividseats_prices = vividseats_prices.split('\nRow')
+
+if "No results" in vividseats_prices[0]:
+    print("No tickets available for particular event.")
+    vividseats_individual_options_info_df = pd.DataFrame(data=[["NA"] * 3], columns=['row', 'ticket_info', 'price'])
+    #individual_ticket_info = event_information_df['artist'].values[0].lower().replace(" ", "_") + "_" + event_information_df['location'].values[0].lower().replace(", ", "_") + "_ticket_info"
+
+    individual_ticket_info = pd.merge(event_information_df, vividseats_individual_options_info_df, left_index=True, right_index=True)
+
+    # Add columns - retailer info
+    individual_ticket_info.loc[:, 'retailer'] = retailer
+    # time of search
+    individual_ticket_info.loc[:, 'time_of_search'] = time_of_search
+else:
+    print("Tickets are available for particular event.")
+    vividseats_individual_options_info = []
+    amount_position_index = []
+    for index, value in enumerate(vividseats_prices):
+        if len(vividseats_prices[index].split('\n')) > 1:
+            max_index = index
+            vividseats_prices_split = vividseats_prices[index].split('\n')
+            print(vividseats_prices_split)
+            for index, value in enumerate(vividseats_prices_split):
+                if '$' in value:
+                    amount_position_index.extend([index])
+                    if len(amount_position_index) == max_index:
+                        amount_position = index
+                        if amount_position == 3:
+                            vividseats_individual_options_info.append([vividseats_prices_split[0], vividseats_prices_split[1],
+                                         vividseats_prices_split[3]])
+                        if amount_position == 1:
+                            vividseats_individual_options_info.append([vividseats_prices_split[0], vividseats_prices_split[1].split(' $')[0],
+                                         vividseats_prices_split[1].split(' $')[1]])
+    # Create DataFrame
+    vividseats_individual_options_info_df = pd.DataFrame(data=vividseats_individual_options_info, columns=['row', 'ticket_info', 'price'])
+
+    # Make length same as vividseats_individual_options_info_df
+    if len(vividseats_individual_options_info_df) > 1:
+        print(str(len(vividseats_individual_options_info_df)) + " ticket options are available.")
+        vividseats_individual_options_info_df_len = len(vividseats_individual_options_info_df)-1
+        event_information_df_expanded = event_information_df.append([event_information_df]*vividseats_individual_options_info_df_len,
+                                                                ignore_index=True)
+        # Merge DataFrames on index
+        individual_ticket_info = pd.merge(event_information_df_expanded, vividseats_individual_options_info_df, left_index=True, right_index=True)
+
+        # Remove $ from price and convert to int
+        individual_ticket_info['price'] = individual_ticket_info['price'].astype(str).str.replace('$', '').astype(int)
+        # Add columns - retailer info
+        individual_ticket_info.loc[:, 'retailer'] = retailer
+        # time of search
+        individual_ticket_info.loc[:, 'time_of_search'] = time_of_search
+    else:
+        print("One ticket option is available.")
+        # Merge DataFrames on index
+        individual_ticket_info = pd.merge(event_information_df, vividseats_individual_options_info_df, left_index=True, right_index=True)
+
+        # Remove $ from price and convert to int
+        individual_ticket_info['price'] = individual_ticket_info['price'].astype(str).str.replace('$','').astype(int)
+        # Add columns - retailer info
+        individual_ticket_info.loc[:,'retailer'] = retailer
+        # time of search
+        individual_ticket_info.loc[:,'time_of_search'] = time_of_search
+
+if vividseats_ticket_info is not None:
+    print("vividseats_ticket_info exists. Append individual_ticket_info.")
+    vividseats_ticket_info = vividseats_ticket_info.append(individual_ticket_info).reset_index(drop=True)
+    print("New length of vividseats_ticket_info after appending is: " + str(len(vividseats_ticket_info))+ "." + "\n")
+    print("The contents of vividseats_ticket_info are below:")
+    print(vividseats_ticket_info)
+else:
+    vividseats_ticket_info = individual_ticket_info
+    print("vividseats_ticket_info has been created.")
+
+### Return back to main vivid seats site that lists all concert dates
+# Close window of specific concert/event which has been scraped
+driver.close()
+driver.switch_to.window(driver.window_handles[0])
+
+
+
+
+# Get fifth concert
+event_information = driver.find_elements_by_xpath('//table[@id="productionsTable"]//tr[@class="vdp-event-row odd"]')[2].text.split('\n')
+
+# Get current time
+time_of_search = dt.now().strftime("%Y-%m-%d %H:%M")
+
+# Empty list to append results to
+event_information_list = []
+for index, value in enumerate(event_information):
+    # Check in day in information
+    if value in ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]:
+        day_index = index
+        if day_index == 0:
+            day_of_week = [event_information[0]]
+            month_day = [event_information[1]]
+            clock_time = [event_information[2]]
+            artist = [event_information[3]]
+            event = [[event_information[4]][0].split('–')[0].strip()]
+            city_state = [[event_information[4]][0].split('–')[1].strip()]
+# Create DataFrame
+event_information_df = pd.DataFrame(data=[day_of_week, month_day, clock_time, artist, event, city_state]).transpose().\
+     rename(columns={0:'day', 1:'date', 2:'time', 3:'artist', 4:'event', 5:'location'})
+
+my_href = driver.find_elements_by_xpath('//table[@id="productionsTable"]//tr[@class="vdp-event-row odd"]')[2].get_attribute(name='data-href')
+
+driver.execute_script("window.open('" + my_href +"');")
+
+# Obtain position of current window handle in window handles list
+current_window_handle_index = driver.window_handles.index(driver.current_window_handle)
+# Obtain position of newly opened tab
+new_window_handle_index = current_window_handle_index + 1
+driver.switch_to.window(driver.window_handles[new_window_handle_index])
+
+try:
+    wait(driver, 10).until(EC.presence_of_element_located((By.XPATH, '//div[@class="production-wrapper"]//'
+                                                                     'aside[@class="vdp-modal "][@id="ticketQuantityModal"][@data-state="opened"]')))
+    print("Pop-up has been loaded.")
+except NoSuchElementException:
+    print("No pop-up appeared")
+
+
+if driver.find_elements_by_xpath('//div[@class="vdp-modal__container"]//div[@class="vdp-modal__header"]//'
+                                 'h5[@class="vdp-type-headline5"]')[0].text == "HOW MANY TICKETS?":
+    print("Asking for how many tickets I would like.")
+    # Click skip - do not select number of seats wanted
+    driver.find_element_by_css_selector("button[class='vdp-button--text modal-dismiss']").click()
+    print("Asking for how many tickets pop-up has been clicked off.")
+    #print(driver.find_elements_by_xpath('//div[@id="rowContainer"]//ul[@class="ticket-rows"]')[0].text)
+    try:
+        wait(driver, 10).until(EC.presence_of_element_located((By.XPATH, '//div[@class="production-wrapper"]//'
+                                                                         'aside[@class="vdp-modal "][@id="ticketQuantityModal"][@data-state="closed"]')))
+        print("Pop-up has been cleared.")
+    except TimeoutException:
+        print('Time-out error')
+else:
+    print("No pop-up appeared")
+    #print(driver.find_elements_by_xpath('//div[@id="rowContainer"]//ul[@class="ticket-rows"]')[0].text)
+
+# Str of all prices for particular artist/event
+vividseats_prices = driver.find_elements_by_xpath('//div[@id="rowContainer"]')[0].text
+vividseats_prices = vividseats_prices.split('\nRow')
+
+if "No results" in vividseats_prices[0]:
+    print("No tickets available for particular event.")
+    vividseats_individual_options_info_df = pd.DataFrame(data=[["NA"] * 3], columns=['row', 'ticket_info', 'price'])
+    #individual_ticket_info = event_information_df['artist'].values[0].lower().replace(" ", "_") + "_" + event_information_df['location'].values[0].lower().replace(", ", "_") + "_ticket_info"
+
+    individual_ticket_info = pd.merge(event_information_df, vividseats_individual_options_info_df, left_index=True, right_index=True)
+
+    # Add columns - retailer info
+    individual_ticket_info.loc[:, 'retailer'] = retailer
+    # time of search
+    individual_ticket_info.loc[:, 'time_of_search'] = time_of_search
+else:
+    print("Tickets are available for particular event.")
+    vividseats_individual_options_info = []
+    amount_position_index = []
+    for index, value in enumerate(vividseats_prices):
+        if len(vividseats_prices[index].split('\n')) > 1:
+            max_index = index
+            vividseats_prices_split = vividseats_prices[index].split('\n')
+            print(vividseats_prices_split)
+            for index, value in enumerate(vividseats_prices_split):
+                if '$' in value:
+                    amount_position_index.extend([index])
+                    if len(amount_position_index) == max_index:
+                        amount_position = index
+                        if amount_position == 3:
+                            vividseats_individual_options_info.append([vividseats_prices_split[0], vividseats_prices_split[1],
+                                         vividseats_prices_split[3]])
+                        if amount_position == 1:
+                            vividseats_individual_options_info.append([vividseats_prices_split[0], vividseats_prices_split[1].split(' $')[0],
+                                         vividseats_prices_split[1].split(' $')[1]])
+    # Create DataFrame
+    vividseats_individual_options_info_df = pd.DataFrame(data=vividseats_individual_options_info, columns=['row', 'ticket_info', 'price'])
+
+    # Make length same as vividseats_individual_options_info_df
+    if len(vividseats_individual_options_info_df) > 1:
+        print(str(len(vividseats_individual_options_info_df)) + " ticket options are available.")
+        vividseats_individual_options_info_df_len = len(vividseats_individual_options_info_df)-1
+        event_information_df_expanded = event_information_df.append([event_information_df]*vividseats_individual_options_info_df_len,
+                                                                ignore_index=True)
+        # Merge DataFrames on index
+        individual_ticket_info = pd.merge(event_information_df_expanded, vividseats_individual_options_info_df, left_index=True, right_index=True)
+
+        # Remove $ from price and convert to int
+        individual_ticket_info['price'] = individual_ticket_info['price'].astype(str).str.replace('$', '').astype(int)
+        # Add columns - retailer info
+        individual_ticket_info.loc[:, 'retailer'] = retailer
+        # time of search
+        individual_ticket_info.loc[:, 'time_of_search'] = time_of_search
+    else:
+        print("One ticket option is available.")
+        # Merge DataFrames on index
+        individual_ticket_info = pd.merge(event_information_df, vividseats_individual_options_info_df, left_index=True, right_index=True)
+
+        # Remove $ from price and convert to int
+        individual_ticket_info['price'] = individual_ticket_info['price'].astype(str).str.replace('$','').astype(int)
+        # Add columns - retailer info
+        individual_ticket_info.loc[:,'retailer'] = retailer
+        # time of search
+        individual_ticket_info.loc[:,'time_of_search'] = time_of_search
+
+if vividseats_ticket_info is not None:
+    print("vividseats_ticket_info exists. Append individual_ticket_info.")
+    vividseats_ticket_info = vividseats_ticket_info.append(individual_ticket_info).reset_index(drop=True)
+    print("New length of vividseats_ticket_info after appending is: " + str(len(vividseats_ticket_info))+ "." + "\n")
+    print("The contents of vividseats_ticket_info are below:")
+    print(vividseats_ticket_info)
+else:
+    vividseats_ticket_info = individual_ticket_info
+    print("vividseats_ticket_info has been created.")
+
+### Return back to main vivid seats site that lists all concert dates
+# Close window of specific concert/event which has been scraped
+driver.close()
+driver.switch_to.window(driver.window_handles[0])
+
+
+
+# Get sixth concert
+event_information = driver.find_elements_by_xpath('//table[@id="productionsTable"]//tr[@class="vdp-event-row even"]')[2].text.split('\n')
+
+# Get current time
+time_of_search = dt.now().strftime("%Y-%m-%d %H:%M")
+
+# Empty list to append results to
+event_information_list = []
+for index, value in enumerate(event_information):
+    # Check in day in information
+    if value in ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]:
+        day_index = index
+        if day_index == 0:
+            day_of_week = [event_information[0]]
+            month_day = [event_information[1]]
+            clock_time = [event_information[2]]
+            artist = [event_information[3]]
+            event = [[event_information[4]][0].split('–')[0].strip()]
+            city_state = [[event_information[4]][0].split('–')[1].strip()]
+# Create DataFrame
+event_information_df = pd.DataFrame(data=[day_of_week, month_day, clock_time, artist, event, city_state]).transpose().\
+     rename(columns={0:'day', 1:'date', 2:'time', 3:'artist', 4:'event', 5:'location'})
+
+my_href = driver.find_elements_by_xpath('//table[@id="productionsTable"]//tr[@class="vdp-event-row even"]')[2].get_attribute(name='data-href')
+
+driver.execute_script("window.open('" + my_href +"');")
+
+# Obtain position of current window handle in window handles list
+current_window_handle_index = driver.window_handles.index(driver.current_window_handle)
+# Obtain position of newly opened tab
+new_window_handle_index = current_window_handle_index + 1
+driver.switch_to.window(driver.window_handles[new_window_handle_index])
+
+try:
+    wait(driver, 10).until(EC.presence_of_element_located((By.XPATH, '//div[@class="production-wrapper"]//'
+                                                                     'aside[@class="vdp-modal "][@id="ticketQuantityModal"][@data-state="opened"]')))
+    print("Pop-up has been loaded.")
+except NoSuchElementException:
+    print("No pop-up appeared")
+
+
+if driver.find_elements_by_xpath('//div[@class="vdp-modal__container"]//div[@class="vdp-modal__header"]//'
+                                 'h5[@class="vdp-type-headline5"]')[0].text == "HOW MANY TICKETS?":
+    print("Asking for how many tickets I would like.")
+    # Click skip - do not select number of seats wanted
+    driver.find_element_by_css_selector("button[class='vdp-button--text modal-dismiss']").click()
+    print("Asking for how many tickets pop-up has been clicked off.")
+    #print(driver.find_elements_by_xpath('//div[@id="rowContainer"]//ul[@class="ticket-rows"]')[0].text)
+    try:
+        wait(driver, 10).until(EC.presence_of_element_located((By.XPATH, '//div[@class="production-wrapper"]//'
+                                                                         'aside[@class="vdp-modal "][@id="ticketQuantityModal"][@data-state="closed"]')))
+        print("Pop-up has been cleared.")
+    except TimeoutException:
+        print('Time-out error')
+else:
+    print("No pop-up appeared")
+    #print(driver.find_elements_by_xpath('//div[@id="rowContainer"]//ul[@class="ticket-rows"]')[0].text)
+
+# Str of all prices for particular artist/event
+vividseats_prices = driver.find_elements_by_xpath('//div[@id="rowContainer"]')[0].text
+vividseats_prices = vividseats_prices.split('\nRow')
+
+if "No results" in vividseats_prices[0]:
+    print("No tickets available for particular event.")
+    vividseats_individual_options_info_df = pd.DataFrame(data=[["NA"] * 3], columns=['row', 'ticket_info', 'price'])
+    #individual_ticket_info = event_information_df['artist'].values[0].lower().replace(" ", "_") + "_" + event_information_df['location'].values[0].lower().replace(", ", "_") + "_ticket_info"
+
+    individual_ticket_info = pd.merge(event_information_df, vividseats_individual_options_info_df, left_index=True, right_index=True)
+
+    # Add columns - retailer info
+    individual_ticket_info.loc[:, 'retailer'] = retailer
+    # time of search
+    individual_ticket_info.loc[:, 'time_of_search'] = time_of_search
+else:
+    print("Tickets are available for particular event.")
+    vividseats_individual_options_info = []
+    amount_position_index = []
+    for index, value in enumerate(vividseats_prices):
+        if len(vividseats_prices[index].split('\n')) > 1:
+            max_index = index
+            vividseats_prices_split = vividseats_prices[index].split('\n')
+            print(vividseats_prices_split)
+            for index, value in enumerate(vividseats_prices_split):
+                if '$' in value:
+                    amount_position_index.extend([index])
+                    if len(amount_position_index) == max_index:
+                        amount_position = index
+                        if amount_position == 3:
+                            vividseats_individual_options_info.append([vividseats_prices_split[0], vividseats_prices_split[1],
+                                         vividseats_prices_split[3]])
+                        if amount_position == 1:
+                            vividseats_individual_options_info.append([vividseats_prices_split[0], vividseats_prices_split[1].split(' $')[0],
+                                         vividseats_prices_split[1].split(' $')[1]])
+    # Create DataFrame
+    vividseats_individual_options_info_df = pd.DataFrame(data=vividseats_individual_options_info, columns=['row', 'ticket_info', 'price'])
+
+    # Make length same as vividseats_individual_options_info_df
+    if len(vividseats_individual_options_info_df) > 1:
+        print(str(len(vividseats_individual_options_info_df)) + " ticket options are available.")
+        vividseats_individual_options_info_df_len = len(vividseats_individual_options_info_df)-1
+        event_information_df_expanded = event_information_df.append([event_information_df]*vividseats_individual_options_info_df_len,
+                                                                ignore_index=True)
+        # Merge DataFrames on index
+        individual_ticket_info = pd.merge(event_information_df_expanded, vividseats_individual_options_info_df, left_index=True, right_index=True)
+
+        # Remove $ from price and convert to int
+        individual_ticket_info['price'] = individual_ticket_info['price'].astype(str).str.replace('$', '').astype(int)
+        # Add columns - retailer info
+        individual_ticket_info.loc[:, 'retailer'] = retailer
+        # time of search
+        individual_ticket_info.loc[:, 'time_of_search'] = time_of_search
+    else:
+        print("One ticket option is available.")
+        # Merge DataFrames on index
+        individual_ticket_info = pd.merge(event_information_df, vividseats_individual_options_info_df, left_index=True, right_index=True)
+
+        # Remove $ from price and convert to int
+        individual_ticket_info['price'] = individual_ticket_info['price'].astype(str).str.replace('$','').astype(int)
+        # Add columns - retailer info
+        individual_ticket_info.loc[:,'retailer'] = retailer
+        # time of search
+        individual_ticket_info.loc[:,'time_of_search'] = time_of_search
+
+if vividseats_ticket_info is not None:
+    print("vividseats_ticket_info exists. Append individual_ticket_info.")
+    vividseats_ticket_info = vividseats_ticket_info.append(individual_ticket_info).reset_index(drop=True)
+    print("New length of vividseats_ticket_info after appending is: " + str(len(vividseats_ticket_info))+ "." + "\n")
+    print("The contents of vividseats_ticket_info are below:")
+    print(vividseats_ticket_info)
+else:
+    vividseats_ticket_info = individual_ticket_info
+    print("vividseats_ticket_info has been created.")
+
+### Return back to main vivid seats site that lists all concert dates
+# Close window of specific concert/event which has been scraped
+driver.close()
+driver.switch_to.window(driver.window_handles[0])
+
+
+
+# Get seventh concert - works
+event_information = driver.find_elements_by_xpath('//table[@id="productionsTable"]//tr[@class="vdp-event-row odd"]')[3].text.split('\n')
+
+# Get current time
+time_of_search = dt.now().strftime("%Y-%m-%d %H:%M")
+
+# Empty list to append results to
+event_information_list = []
+for index, value in enumerate(event_information):
+    # Check in day in information
+    if value in ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]:
+        day_index = index
+        if day_index == 0:
+            day_of_week = [event_information[0]]
+            month_day = [event_information[1]]
+            clock_time = [event_information[2]]
+            artist = [event_information[3]]
+            event = [[event_information[4]][0].split('–')[0].strip()]
+            city_state = [[event_information[4]][0].split('–')[1].strip()]
+# Create DataFrame
+event_information_df = pd.DataFrame(data=[day_of_week, month_day, clock_time, artist, event, city_state]).transpose().\
+     rename(columns={0:'day', 1:'date', 2:'time', 3:'artist', 4:'event', 5:'location'})
+
+my_href = driver.find_elements_by_xpath('//table[@id="productionsTable"]//tr[@class="vdp-event-row odd"]')[3].get_attribute(name='data-href')
+
+driver.execute_script("window.open('" + my_href +"');")
+
+# Obtain position of current window handle in window handles list
+current_window_handle_index = driver.window_handles.index(driver.current_window_handle)
+# Obtain position of newly opened tab
+new_window_handle_index = current_window_handle_index + 1
+driver.switch_to.window(driver.window_handles[new_window_handle_index])
+
+try:
+    wait(driver, 10).until(EC.presence_of_element_located((By.XPATH, '//div[@class="production-wrapper"]//'
+                                                                     'aside[@class="vdp-modal "][@id="ticketQuantityModal"][@data-state="opened"]')))
+    print("Pop-up has been loaded.")
+except NoSuchElementException:
+    print("No pop-up appeared")
+
+
+if driver.find_elements_by_xpath('//div[@class="vdp-modal__container"]//div[@class="vdp-modal__header"]//'
+                                 'h5[@class="vdp-type-headline5"]')[0].text == "HOW MANY TICKETS?":
+    print("Asking for how many tickets I would like.")
+    # Click skip - do not select number of seats wanted
+    driver.find_element_by_css_selector("button[class='vdp-button--text modal-dismiss']").click()
+    print("Asking for how many tickets pop-up has been clicked off.")
+    #print(driver.find_elements_by_xpath('//div[@id="rowContainer"]//ul[@class="ticket-rows"]')[0].text)
+    try:
+        wait(driver, 10).until(EC.presence_of_element_located((By.XPATH, '//div[@class="production-wrapper"]//'
+                                                                         'aside[@class="vdp-modal "][@id="ticketQuantityModal"][@data-state="closed"]')))
+        print("Pop-up has been cleared.")
+    except TimeoutException:
+        print('Time-out error')
+else:
+    print("No pop-up appeared")
+    #print(driver.find_elements_by_xpath('//div[@id="rowContainer"]//ul[@class="ticket-rows"]')[0].text)
+
+# Str of all prices for particular artist/event
+vividseats_prices = driver.find_elements_by_xpath('//div[@id="rowContainer"]')[0].text
+vividseats_prices = vividseats_prices.split('\nRow')
+
+if "No results" in vividseats_prices[0]:
+    print("No tickets available for particular event.")
+    vividseats_individual_options_info_df = pd.DataFrame(data=[["NA"] * 3], columns=['row', 'ticket_info', 'price'])
+    #individual_ticket_info = event_information_df['artist'].values[0].lower().replace(" ", "_") + "_" + event_information_df['location'].values[0].lower().replace(", ", "_") + "_ticket_info"
+
+    individual_ticket_info = pd.merge(event_information_df, vividseats_individual_options_info_df, left_index=True, right_index=True)
+
+    # Add columns - retailer info
+    individual_ticket_info.loc[:, 'retailer'] = retailer
+    # time of search
+    individual_ticket_info.loc[:, 'time_of_search'] = time_of_search
+else:
+    print("Tickets are available for particular event.")
+    vividseats_individual_options_info = []
+    amount_position_index = []
+    for index, value in enumerate(vividseats_prices):
+        if len(vividseats_prices[index].split('\n')) > 1:
+            max_index = index
+            vividseats_prices_split = vividseats_prices[index].split('\n')
+            print(vividseats_prices_split)
+            for index, value in enumerate(vividseats_prices_split):
+                if '$' in value:
+                    amount_position_index.extend([index])
+                    if len(amount_position_index) == max_index:
+                        amount_position = index
+                        if amount_position == 3:
+                            vividseats_individual_options_info.append([vividseats_prices_split[0], vividseats_prices_split[1],
+                                         vividseats_prices_split[3]])
+                        if amount_position == 1:
+                            vividseats_individual_options_info.append([vividseats_prices_split[0], vividseats_prices_split[1].split(' $')[0],
+                                         vividseats_prices_split[1].split(' $')[1]])
+    # Create DataFrame
+    vividseats_individual_options_info_df = pd.DataFrame(data=vividseats_individual_options_info, columns=['row', 'ticket_info', 'price'])
+
+    # Make length same as vividseats_individual_options_info_df
+    if len(vividseats_individual_options_info_df) > 1:
+        print(str(len(vividseats_individual_options_info_df)) + " ticket options are available.")
+        vividseats_individual_options_info_df_len = len(vividseats_individual_options_info_df)-1
+        event_information_df_expanded = event_information_df.append([event_information_df]*vividseats_individual_options_info_df_len,
+                                                                ignore_index=True)
+        # Merge DataFrames on index
+        individual_ticket_info = pd.merge(event_information_df_expanded, vividseats_individual_options_info_df, left_index=True, right_index=True)
+
+        # Remove $ from price and convert to int
+        individual_ticket_info['price'] = individual_ticket_info['price'].astype(str).str.replace('$', '').astype(int)
+        # Add columns - retailer info
+        individual_ticket_info.loc[:, 'retailer'] = retailer
+        # time of search
+        individual_ticket_info.loc[:, 'time_of_search'] = time_of_search
+    else:
+        print("One ticket option is available.")
+        # Merge DataFrames on index
+        individual_ticket_info = pd.merge(event_information_df, vividseats_individual_options_info_df, left_index=True, right_index=True)
+
+        # Remove $ from price and convert to int
+        individual_ticket_info['price'] = individual_ticket_info['price'].astype(str).str.replace('$','').astype(int)
+        # Add columns - retailer info
+        individual_ticket_info.loc[:,'retailer'] = retailer
+        # time of search
+        individual_ticket_info.loc[:,'time_of_search'] = time_of_search
+
+if vividseats_ticket_info is not None:
+    print("vividseats_ticket_info exists. Append individual_ticket_info.")
+    vividseats_ticket_info = vividseats_ticket_info.append(individual_ticket_info).reset_index(drop=True)
+    print("New length of vividseats_ticket_info after appending is: " + str(len(vividseats_ticket_info))+ "." + "\n")
+    print("The contents of vividseats_ticket_info are below:")
+    print(vividseats_ticket_info)
+else:
+    vividseats_ticket_info = individual_ticket_info
+    print("vividseats_ticket_info has been created.")
+
+### Return back to main vivid seats site that lists all concert dates
+# Close window of specific concert/event which has been scraped
+driver.close()
+driver.switch_to.window(driver.window_handles[0])
+
+
+
+
+
+
 # Save to csv
 vividseats_ticket_info.to_csv("vividseats_ticket_info_take_one.csv", sep=',', mode='a', index=False)
 
-# from datetime import datetime as dt
-# event_information = "MAY 14"
-# d = dt.strptime(event_information[1], '%B %d')
-# print(d.strftime('%Y-%m-%d'))
-#
-# day = 28
-# week = 30
-# year = 2018
-# t = dt.strptime('{}_{}_{}{}'.format(day,week,year,-0), '%d_%W_%Y%w')
-# t.strftime('%W')
-# t.strftime('%m')
-#
-# day = 28
-# week = 30
-# year = 2018
-# print(dt.strptime('{}_{}_{}{}'.format(day,week,year,-0), '%d_%W_%Y%w'))
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -399,7 +1199,7 @@ driver.find_element_by_css_selector("div[class='vdp-modal__container']")
 # Obtain remaining URLs
 for i in range(0, len(driver.find_elements_by_xpath('//cite[@class="iUh30"]'))):
     print(driver.find_elements_by_xpath('//cite[@class="iUh30"]')[i].text)
-    
+
 for i in range(0, len(driver.find_elements_by_xpath('//cite[@class="iUh30 bc"]'))):
     print(driver.find_elements_by_xpath('//cite[@class="iUh30 bc"]')[i].text)
 
